@@ -9,10 +9,10 @@ let passed = 0;
 const test = (name, fn) => { fn(); passed += 1; console.log(`  ✓ ${name}`); };
 
 console.log('데이터');
-test('레벨 4개 × 스테이지 4개 × 단어 8개', () => {
+test('레벨 4개, 스테이지마다 단어 8개(스테이지 수는 레벨별로 늘어날 수 있음)', () => {
   assert.equal(LEVELS.length, 4);
   for (const lv of LEVELS) {
-    assert.equal(lv.stages.length, 4, `Lv${lv.id} 스테이지 수`);
+    assert.ok(lv.stages.length >= 4, `Lv${lv.id} 스테이지 수`);
     for (const st of lv.stages) assert.equal(st.words.length, 8, `${st.key} 단어 수`);
   }
 });
