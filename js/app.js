@@ -59,6 +59,7 @@ function render() {
 
   const views = {
     '': homeView, review: reviewView, notes: notesView, me: meView,
+    level: () => levelView(Number(arg)),
     stage: () => stageView(arg), learn: () => learnView(arg), play: playView, result: resultView,
   };
   app.innerHTML = (views[name] || homeView)();
@@ -80,6 +81,7 @@ function renderNav(name) {
 
 function afterRender(name) {
   if (name === 'me') bindChart();
+  if (name === 'level') $('.stage.current')?.scrollIntoView({ block: 'center' });
   if (name === 'learn') {
     const w = wordOf(currentLearnWords()[learn.i]?.id);
     if (w && store.state.settings.sound) say(w.en);
@@ -97,37 +99,29 @@ function afterRender(name) {
 }
 const $ = (sel) => app.querySelector(sel);
 
-// ── 홈(학습 지도) ───────────────────────────────────────────
+// ── 홈(레벨 선택) ───────────────────────────────────────────
+// 레벨마다 스테이지가 계속 늘어나도(지금 Lv.3·4는 19+보스) 홈 화면 스크롤이 안 길어지게,
+// 홈에는 레벨 카드 4개만 두고 실제 스테이지 목록은 levelView(/level/:id)로 분리했다.
 function homeView() {
   const { goal } = store.state.settings;
   const done = store.todayCount();
   const due = store.dueIds().length;
-  const levels = LEVELS.map((lv) => {
+  const cards = LEVELS.map((lv) => {
     const unlocked = store.isLevelUnlocked(lv.id);
     const cleared = lv.stages.filter((s) => store.stageInfo(s.key).cleared).length;
     const boss = store.bossInfo(lv.id);
-    const bossOpen = store.isBossUnlocked(lv.id);
-    const rows = lv.stages.map((s) => {
-      const info = store.stageInfo(s.key);
-      const open = store.isStageUnlocked(s.key);
-      const cls = !open ? 'locked' : info.cleared ? 'done' : 'current';
-      return `<li><button class="stage ${cls}" data-act="${open ? 'open-stage' : 'locked'}" data-arg="${s.key}" ${open ? '' : 'aria-disabled="true"'}>
-        <span class="node" aria-hidden="true">${info.cleared ? '✓' : open ? s.index + 1 : '🔒'}</span>
-        <span class="meta"><b>${esc(s.name)}</b><small>단어 ${s.words.length}개${info.cleared ? ` · 최고 ${pct(info.best)}%` : ''}</small></span>
-        <span class="right">${info.cleared ? stars(info.stars) : open ? '<span class="tag">시작</span>' : ''}</span>
-      </button></li>`;
-    }).join('');
-    const bossCls = !bossOpen ? 'locked' : boss.cleared ? 'done' : 'current';
-    const bossRow = `<li><button class="stage boss ${bossCls}" data-act="${bossOpen ? 'start-boss' : 'locked-boss'}" data-arg="${lv.id}" ${bossOpen ? '' : 'aria-disabled="true"'}>
-        <span class="node" aria-hidden="true">${boss.cleared ? '✓' : bossOpen ? '👑' : '🔒'}</span>
-        <span class="meta"><b>레벨 테스트</b><small>16문제 · ${pct(PASS_RATE)}% 이상이면 통과${boss.cleared ? ` · 최고 ${pct(boss.best)}%` : ''}</small></span>
-        <span class="right">${boss.cleared ? '<span class="tag ok">통과</span>' : bossOpen ? '<span class="tag">도전</span>' : ''}</span>
-      </button></li>`;
-    const lock = unlocked ? '' : `<p class="level-lock">🔒 Lv.${lv.id - 1} 레벨 테스트를 통과하면 열려요</p>`;
-    return `<section class="level ${unlocked ? '' : 'is-locked'}">
-      <div class="level-head"><span class="level-icon" aria-hidden="true">${lv.icon}</span>
-        <div><h2>Lv.${lv.id} ${esc(lv.name)}</h2><p>${esc(lv.desc)} · ${cleared}/${lv.stages.length} 클리어</p></div></div>
-      ${lock}<ol class="stages">${rows}${bossRow}</ol></section>`;
+    const totalNodes = lv.stages.length + 1; // 스테이지 + 보스
+    const doneNodes = cleared + (boss.cleared ? 1 : 0);
+    return `<li><button class="level-card ${unlocked ? '' : 'locked'}" data-act="${unlocked ? 'go' : 'locked-level'}" data-arg="/level/${lv.id}" ${unlocked ? '' : 'aria-disabled="true"'}>
+      <span class="level-icon" aria-hidden="true">${unlocked ? lv.icon : '🔒'}</span>
+      <span class="meta">
+        <b>Lv.${lv.id} ${esc(lv.name)}</b>
+        <small>${unlocked ? esc(lv.desc) : `Lv.${lv.id - 1} 레벨 테스트를 통과하면 열려요`}</small>
+        ${unlocked ? `<span class="bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="${totalNodes}" aria-valuenow="${doneNodes}"><i style="width:${(doneNodes / totalNodes) * 100}%"></i></span>
+        <small>${doneNodes}/${totalNodes} 클리어${boss.cleared ? ' · 레벨 테스트 통과' : ''}</small>` : ''}
+      </span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button></li>`;
   }).join('');
 
   return `<main class="view">
@@ -137,7 +131,38 @@ function homeView() {
       <div class="goal-row"><b>오늘의 목표</b><span>${done >= goal ? '달성! 🎉' : `${done} / ${goal} 문제`}</span></div>
       <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${Math.min(done, goal)}"><i style="width:${Math.min(1, done / goal) * 100}%"></i></div>
       ${due > 0 ? `<button class="btn primary block" data-act="start-review">복습할 단어 ${due}개 · 지금 복습</button>` : ''}
-    </section>${levels}</main>`;
+    </section>
+    <ul class="levels">${cards}</ul></main>`;
+}
+
+// ── 레벨별 스테이지 목록 ─────────────────────────────────────
+function levelView(id) {
+  const lv = LEVELS.find((l) => l.id === id);
+  if (!lv || !store.isLevelUnlocked(id)) return homeView();
+  const cleared = lv.stages.filter((s) => store.stageInfo(s.key).cleared).length;
+  const boss = store.bossInfo(lv.id);
+  const bossOpen = store.isBossUnlocked(lv.id);
+  const rows = lv.stages.map((s) => {
+    const info = store.stageInfo(s.key);
+    const open = store.isStageUnlocked(s.key);
+    const cls = !open ? 'locked' : info.cleared ? 'done' : 'current';
+    return `<li><button class="stage ${cls}" data-act="${open ? 'open-stage' : 'locked'}" data-arg="${s.key}" ${open ? '' : 'aria-disabled="true"'}>
+      <span class="node" aria-hidden="true">${info.cleared ? '✓' : open ? s.index + 1 : '🔒'}</span>
+      <span class="meta"><b>${esc(s.name)}</b><small>단어 ${s.words.length}개${info.cleared ? ` · 최고 ${pct(info.best)}%` : ''}</small></span>
+      <span class="right">${info.cleared ? stars(info.stars) : open ? '<span class="tag">시작</span>' : ''}</span>
+    </button></li>`;
+  }).join('');
+  const bossCls = !bossOpen ? 'locked' : boss.cleared ? 'done' : 'current';
+  const bossRow = `<li><button class="stage boss ${bossCls}" data-act="${bossOpen ? 'start-boss' : 'locked-boss'}" data-arg="${lv.id}" ${bossOpen ? '' : 'aria-disabled="true"'}>
+      <span class="node" aria-hidden="true">${boss.cleared ? '✓' : bossOpen ? '👑' : '🔒'}</span>
+      <span class="meta"><b>레벨 테스트</b><small>16문제 · ${pct(PASS_RATE)}% 이상이면 통과${boss.cleared ? ` · 최고 ${pct(boss.best)}%` : ''}</small></span>
+      <span class="right">${boss.cleared ? '<span class="tag ok">통과</span>' : bossOpen ? '<span class="tag">도전</span>' : ''}</span>
+    </button></li>`;
+  return `<main class="view">
+    <header class="bar-top"><button class="icon-btn" data-act="go" data-arg="/" aria-label="뒤로">←</button>
+      <h1>Lv.${lv.id} ${esc(lv.name)}</h1></header>
+    <p class="level-sub">${esc(lv.desc)} · ${cleared}/${lv.stages.length} 스테이지 클리어</p>
+    <ol class="stages">${rows}${bossRow}</ol></main>`;
 }
 
 // ── 스테이지 소개 / 단어 학습 ───────────────────────────────
@@ -486,6 +511,7 @@ const actions = {
   speak: (arg) => say(arg),
   locked: () => toast('앞 스테이지를 먼저 클리어하세요.'),
   'locked-boss': () => toast('이 레벨의 스테이지를 모두 클리어하면 열려요.'),
+  'locked-level': () => toast('이전 레벨의 레벨 테스트를 먼저 통과하세요.'),
   'open-stage': (arg) => navigate(`/stage/${arg}`),
   'open-learn': (arg) => { learn = { key: arg, i: 0 }; navigate(`/learn/${arg}`); },
   'learn-prev': () => { if (learn.i > 0) { learn.i -= 1; render(); } },
