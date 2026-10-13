@@ -73,7 +73,7 @@ function render() {
 }
 
 function renderNav(name) {
-  const due = store.dueIds().length;
+  const due = store.dueIds(store.state.settings.lang).length; // 현재 언어 탭 기준(홈 화면 표시와 일치시킴)
   const tabs = [['', 'learn', '학습'], ['review', 'review', '복습'], ['notes', 'notes', '오답노트'], ['me', 'me', '내 기록']];
   const current = ['stage'].includes(name) ? '' : name;
   nav.innerHTML = tabs.map(([path, ic, label]) => `
@@ -106,11 +106,15 @@ const $ = (sel) => app.querySelector(sel);
 // ── 홈(레벨 선택) ───────────────────────────────────────────
 // 레벨마다 스테이지가 계속 늘어나도(지금 Lv.3·4는 19+보스) 홈 화면 스크롤이 안 길어지게,
 // 홈에는 레벨 카드 4개만 두고 실제 스테이지 목록은 levelView(/level/:id)로 분리했다.
+// 영어/일본어 탭 — 홈뿐 아니라 복습·오답노트에서도 씀(둘 다 언어별로 따로 보여줘야 숫자가 안 섞임).
+function langTabsHtml(lang) {
+  return `<div class="lang-tabs" role="tablist" aria-label="학습 언어">${LANGUAGES.map((l) => `<button class="lang-tab ${lang === l.id ? 'active' : ''}" data-act="set-lang" data-arg="${l.id}" ${lang === l.id ? 'aria-current="true"' : ''}>${l.icon} ${esc(l.name)}</button>`).join('')}</div>`;
+}
+
 function homeView() {
   const { goal, lang } = store.state.settings;
   const done = store.todayCount(lang); // 오늘의 목표는 현재 탭 언어 기준(언어별로 따로 집계)
-  const due = store.dueIds().length;
-  const langTabs = LANGUAGES.map((l) => `<button class="lang-tab ${lang === l.id ? 'active' : ''}" data-act="set-lang" data-arg="${l.id}" ${lang === l.id ? 'aria-current="true"' : ''}>${l.icon} ${esc(l.name)}</button>`).join('');
+  const due = store.dueIds(lang).length; // 복습할 단어도 마찬가지로 현재 탭 언어 기준
   const cards = LEVELS.filter((lv) => lv.lang === lang).map((lv) => {
     const unlocked = store.isLevelUnlocked(lv.id);
     const cleared = lv.stages.filter((s) => store.stageInfo(s.key).cleared).length;
@@ -132,7 +136,7 @@ function homeView() {
   return `<main class="view">
     <header class="top"><h1>워드퀘스트</h1>
       <div class="chips"><span class="chip streak" title="연속 학습">🔥 ${store.streak()}일</span><span class="chip xp" title="누적 경험치">⭐ ${store.state.xp} XP</span></div></header>
-    <div class="lang-tabs" role="tablist" aria-label="학습 언어">${langTabs}</div>
+    ${langTabsHtml(lang)}
     <section class="card goal" aria-label="오늘의 목표">
       <div class="goal-row"><b>오늘의 목표</b><span>${done >= goal ? '달성! 🎉' : `${done} / ${goal} 문제`}</span></div>
       <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${Math.min(done, goal)}"><i style="width:${Math.min(1, done / goal) * 100}%"></i></div>
@@ -388,9 +392,12 @@ function resultView() {
 
 // ── 복습 / 오답노트 ──────────────────────────────────────────
 function reviewView() {
-  const ids = store.dueIds();
+  const { lang } = store.state.settings;
+  const ids = store.dueIds(lang);
   const words = store.state.words;
-  const learned = Object.values(words).filter((r) => r.learned);
+  const learned = Object.entries(words)
+    .filter(([id, r]) => r.learned && WORD_BY_ID.get(id)?.lang === lang)
+    .map(([, r]) => r);
   let body;
   if (!learned.length) {
     body = `<section class="card empty"><h2>아직 배운 단어가 없어요</h2><p>학습 탭에서 첫 스테이지를 끝내면 복습이 자동으로 쌓여요.</p>
@@ -409,13 +416,15 @@ function reviewView() {
     body = `<section class="card empty"><h2>오늘 복습은 끝! 🎉</h2><p>다음 복습은 <b>${when}</b>, 단어 ${count}개예요.</p></section>`;
   }
   const mastered = learned.filter(isMastered).length;
-  return `<main class="view"><header class="top"><h1>복습</h1></header>${body}
+  return `<main class="view"><header class="top"><h1>복습</h1></header>
+    ${langTabsHtml(lang)}${body}
     <p class="note">배운 단어 ${learned.length}개 중 ${mastered}개를 완전히 외웠어요. 맞힐수록 복습 간격이 1일 → 2일 → 4일 → 7일 → 15일 → 30일로 늘어나고, 틀리면 처음부터 다시 돌아와요.</p></main>`;
 }
 
 function notesView() {
+  const { lang } = store.state.settings;
   const words = store.state.words;
-  const ids = store.noteIds().sort((a, b) => words[b].last - words[a].last);
+  const ids = store.noteIds(lang).sort((a, b) => words[b].last - words[a].last);
   const rows = ids.map((id) => {
     const w = wordOf(id);
     const r = words[id];
@@ -426,7 +435,8 @@ function notesView() {
   const body = ids.length
     ? `<ul class="wordlist notes">${rows}</ul><div class="actions sticky"><button class="btn primary" data-act="start-notes">오답 연습 (최대 10문제)</button></div>`
     : '<section class="card empty"><h2>오답노트가 비어 있어요</h2><p>틀린 단어가 여기에 모이고, 연속 3번 맞히면 자동으로 졸업해요.</p></section>';
-  return `<main class="view"><header class="top"><h1>오답노트</h1><span class="chip">${ids.length}개</span></header>${body}</main>`;
+  return `<main class="view"><header class="top"><h1>오답노트</h1><span class="chip">${ids.length}개</span></header>
+    ${langTabsHtml(lang)}${body}</main>`;
 }
 
 // ── 내 기록(통계 + 설정) ─────────────────────────────────────
@@ -545,12 +555,12 @@ const actions = {
   'start-boss': (levelId) => startSession({ mode: 'boss', key: String(levelId), title: `Lv.${levelId} 레벨 테스트`, questions: bossQuestions(Number(levelId)) }),
   'start-review': () => {
     const words = store.state.words;
-    const ids = store.dueIds().sort((a, b) => words[a].due - words[b].due).slice(0, 20);
+    const ids = store.dueIds(store.state.settings.lang).sort((a, b) => words[a].due - words[b].due).slice(0, 20);
     if (ids.length) startSession({ mode: 'review', title: '복습', questions: reviewQuestions(ids, words) });
   },
   'start-notes': () => {
     const words = store.state.words;
-    const ids = store.noteIds().slice(0, 10);
+    const ids = store.noteIds(store.state.settings.lang).slice(0, 10);
     if (ids.length) startSession({ mode: 'notes', title: '오답 연습', questions: reviewQuestions(ids, words) });
   },
   choose: (arg) => { if (session) submitAnswer(session.queue[session.idx].choices[Number(arg)]); },

@@ -147,6 +147,18 @@ test('오늘의 목표는 언어별로 따로 집계되고, 인자 없이 부르
   assert.equal(s.todayCount('ja'), 2);
   assert.equal(s.todayCount(), 5);
 });
+test('복습 대기·오답노트도 언어별로 따로 걸러진다', () => {
+  const now = Date.now();
+  const s = createStore(memory(), () => now);
+  const en = s.rec('borrow'); schedule(en, true, now); en.note = true;
+  const ja = s.rec('食べる'); schedule(ja, true, now); ja.note = true;
+  const due = now + 2 * 86400000; // 둘 다 복습 시점이 지나도록
+  const s2 = createStore({ getItem: () => JSON.stringify({ v: 1, words: { borrow: en, 食べる: ja } }), setItem: () => {} }, () => due);
+  assert.ok(s2.dueIds('en').includes('borrow') && !s2.dueIds('en').includes('食べる'));
+  assert.ok(s2.dueIds('ja').includes('食べる') && !s2.dueIds('ja').includes('borrow'));
+  assert.ok(s2.noteIds('en').includes('borrow') && !s2.noteIds('en').includes('食べる'));
+  assert.ok(s2.noteIds('ja').includes('食べる') && !s2.noteIds('ja').includes('borrow'));
+});
 test('byLang 도입 전에 저장된 오늘 기록(필드 없음)이어도 addActivity가 에러 없이 동작한다', () => {
   const storage = memory();
   const t = dateStr(Date.now());

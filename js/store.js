@@ -1,5 +1,5 @@
 // 학습 기록 저장소. localStorage에 JSON으로 저장하고, 테스트에서는 storage/clock을 바꿔 끼운다.
-import { LEVELS, STAGE_BY_KEY, levelTrackPrev } from './data.js';
+import { LEVELS, STAGE_BY_KEY, WORD_BY_ID, levelTrackPrev } from './data.js';
 import { newRecord, isDue } from './srs.js';
 
 const KEY = 'wordquest.v1';
@@ -83,11 +83,12 @@ export function createStore(storage = globalThis.localStorage, clock = Date.now)
       return lang ? (day.byLang?.[lang] || 0) : day.q;
     },
 
-    dueIds() {
+    // lang을 주면 그 언어 단어만(홈 화면의 언어별 "복습할 단어"용), 안 주면 전체(복습 탭 등 기존 동작).
+    dueIds(lang = null) {
       const now = clock();
-      return Object.keys(state.words).filter((id) => isDue(state.words[id], now));
+      return Object.keys(state.words).filter((id) => isDue(state.words[id], now) && (!lang || WORD_BY_ID.get(id)?.lang === lang));
     },
-    noteIds: () => Object.keys(state.words).filter((id) => state.words[id].note),
+    noteIds: (lang = null) => Object.keys(state.words).filter((id) => state.words[id].note && (!lang || WORD_BY_ID.get(id)?.lang === lang)),
 
     // 진행도/잠금
     stageInfo: (key) => state.stages[key] || { cleared: false, stars: 0, best: 0 },
