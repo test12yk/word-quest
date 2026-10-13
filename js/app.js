@@ -1,5 +1,5 @@
 // 워드퀘스트 — 화면/라우팅/세션 진행. 로직은 srs.js·quiz.js·store.js에 있고, 여기서는 그걸 화면에 연결한다.
-import { LEVELS, STAGE_BY_KEY, WORD_BY_ID, POS_LABEL } from './data.js';
+import { LEVELS, STAGE_BY_KEY, WORD_BY_ID, POS_LABEL, LANGUAGES, levelTrackNext } from './data.js';
 import { createStore, dateStr } from './store.js';
 import {
   TYPE_LABEL, makeQuestion, stageQuestions, bossQuestions, reviewQuestions, retryQuestion,
@@ -23,8 +23,12 @@ let learn = { key: null, i: 0 };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const mark = (ex) => esc(ex).replace(/\*([^*]+)\*/g, '<mark>$1</mark>');
 const pct = (r) => Math.round(r * 100);
-const say = (text) => speak(text, store.state.settings.rate);
+const ttsLangOf = (lang) => LANGUAGES.find((l) => l.id === lang)?.ttsLang || 'en-US';
+const say = (text, lang = 'en-US') => speak(text, store.state.settings.rate, lang);
 const wordOf = (id) => WORD_BY_ID.get(id);
+// 일본어 표제어 위에 후리가나(읽기)를 보여줄 때 쓰는 조각. 한자 없이 가나뿐인 단어는 읽기=표제어라 생략.
+const reading = (w) => (w.reading && w.reading !== w.en ? `<p class="reading">${esc(w.reading)}</p>` : '');
+const typingAnswer = (w) => w.romaji || w.en;
 const stars = (n) => `<span class="stars" role="img" aria-label="별 ${n}개">${[0, 1, 2].map((i) => `<span class="${i < n ? 'on' : ''}">★</span>`).join('')}</span>`;
 
 function toast(msg) {
@@ -84,14 +88,14 @@ function afterRender(name) {
   if (name === 'level') $('.stage.current')?.scrollIntoView({ block: 'center' });
   if (name === 'learn') {
     const w = wordOf(currentLearnWords()[learn.i]?.id);
-    if (w && store.state.settings.sound) say(w.en);
+    if (w && store.state.settings.sound) say(w.en, ttsLangOf(w.lang));
   }
   if (name === 'play' && session) {
     const q = session.queue[session.idx];
     if (session.feedback) {
       $('[data-act="next"]')?.focus();
     } else {
-      if (q.type === 'listen' && store.state.settings.sound && session.spokenIdx !== session.idx) say(wordOf(q.wordId).en);
+      if (q.type === 'listen' && store.state.settings.sound && session.spokenIdx !== session.idx) { const w = wordOf(q.wordId); say(w.en, ttsLangOf(w.lang)); }
       session.spokenIdx = session.idx;
       $('.spell input')?.focus();
     }
@@ -103,10 +107,11 @@ const $ = (sel) => app.querySelector(sel);
 // 레벨마다 스테이지가 계속 늘어나도(지금 Lv.3·4는 19+보스) 홈 화면 스크롤이 안 길어지게,
 // 홈에는 레벨 카드 4개만 두고 실제 스테이지 목록은 levelView(/level/:id)로 분리했다.
 function homeView() {
-  const { goal } = store.state.settings;
+  const { goal, lang } = store.state.settings;
   const done = store.todayCount();
   const due = store.dueIds().length;
-  const cards = LEVELS.map((lv) => {
+  const langTabs = LANGUAGES.map((l) => `<button class="lang-tab ${lang === l.id ? 'active' : ''}" data-act="set-lang" data-arg="${l.id}" ${lang === l.id ? 'aria-current="true"' : ''}>${l.icon} ${esc(l.name)}</button>`).join('');
+  const cards = LEVELS.filter((lv) => lv.lang === lang).map((lv) => {
     const unlocked = store.isLevelUnlocked(lv.id);
     const cleared = lv.stages.filter((s) => store.stageInfo(s.key).cleared).length;
     const boss = store.bossInfo(lv.id);
@@ -115,8 +120,8 @@ function homeView() {
     return `<li><button class="level-card ${unlocked ? '' : 'locked'}" data-act="${unlocked ? 'go' : 'locked-level'}" data-arg="/level/${lv.id}" ${unlocked ? '' : 'aria-disabled="true"'}>
       <span class="level-icon" aria-hidden="true">${unlocked ? lv.icon : '🔒'}</span>
       <span class="meta">
-        <b>Lv.${lv.id} ${esc(lv.name)}</b>
-        <small>${unlocked ? esc(lv.desc) : `Lv.${lv.id - 1} 레벨 테스트를 통과하면 열려요`}</small>
+        <b>${esc(lv.label)} ${esc(lv.name)}</b>
+        <small>${unlocked ? esc(lv.desc) : `${esc(prevLockMsg(lv.id))}`}</small>
         ${unlocked ? `<span class="bar mini" role="progressbar" aria-valuemin="0" aria-valuemax="${totalNodes}" aria-valuenow="${doneNodes}"><i style="width:${(doneNodes / totalNodes) * 100}%"></i></span>
         <small>${doneNodes}/${totalNodes} 클리어${boss.cleared ? ' · 레벨 테스트 통과' : ''}</small>` : ''}
       </span>
@@ -127,12 +132,21 @@ function homeView() {
   return `<main class="view">
     <header class="top"><h1>워드퀘스트</h1>
       <div class="chips"><span class="chip streak" title="연속 학습">🔥 ${store.streak()}일</span><span class="chip xp" title="누적 경험치">⭐ ${store.state.xp} XP</span></div></header>
+    <div class="lang-tabs" role="tablist" aria-label="학습 언어">${langTabs}</div>
     <section class="card goal" aria-label="오늘의 목표">
       <div class="goal-row"><b>오늘의 목표</b><span>${done >= goal ? '달성! 🎉' : `${done} / ${goal} 문제`}</span></div>
       <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${goal}" aria-valuenow="${Math.min(done, goal)}"><i style="width:${Math.min(1, done / goal) * 100}%"></i></div>
       ${due > 0 ? `<button class="btn primary block" data-act="start-review">복습할 단어 ${due}개 · 지금 복습</button>` : ''}
     </section>
     <ul class="levels">${cards}</ul></main>`;
+}
+
+// "이전 레벨 테스트를 통과하면 열려요" 메시지 — 언어 트랙 안에서 바로 앞 레벨을 찾아 라벨을 붙인다.
+function prevLockMsg(levelId) {
+  const lv = LEVELS.find((l) => l.id === levelId);
+  const idx = LEVELS.filter((l) => l.lang === lv.lang).findIndex((l) => l.id === levelId);
+  const prev = LEVELS.filter((l) => l.lang === lv.lang)[idx - 1];
+  return prev ? `${prev.label} 레벨 테스트를 통과하면 열려요` : '';
 }
 
 // ── 레벨별 스테이지 목록 ─────────────────────────────────────
@@ -160,7 +174,7 @@ function levelView(id) {
     </button></li>`;
   return `<main class="view">
     <header class="bar-top"><button class="icon-btn" data-act="go" data-arg="/" aria-label="뒤로">←</button>
-      <h1>Lv.${lv.id} ${esc(lv.name)}</h1></header>
+      <h1>${esc(lv.label)} ${esc(lv.name)}</h1></header>
     <p class="level-sub">${esc(lv.desc)} · ${cleared}/${lv.stages.length} 스테이지 클리어</p>
     <ol class="stages">${rows}${bossRow}</ol></main>`;
 }
@@ -170,10 +184,11 @@ function stageView(key) {
   const st = STAGE_BY_KEY.get(key);
   if (!st || !store.isStageUnlocked(key)) return homeView();
   const info = store.stageInfo(key);
-  const rows = st.words.map((w) => `<li><span class="w-en">${esc(w.en)}</span><span class="w-ko">${esc(w.ko)}</span>
-    <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`).join('');
+  const lv = LEVELS.find((l) => l.id === st.level);
+  const rows = st.words.map((w) => `<li><span class="w-head"><span class="w-en">${esc(w.en)}</span>${reading(w)}</span><span class="w-ko">${esc(w.ko)}</span>
+    <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" data-lang="${ttsLangOf(w.lang)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`).join('');
   return `<main class="view">
-    <header class="bar-top"><button class="icon-btn" data-act="go" data-arg="/" aria-label="뒤로">←</button><h1>Lv.${st.level} · ${esc(st.name)}</h1></header>
+    <header class="bar-top"><button class="icon-btn" data-act="go" data-arg="/" aria-label="뒤로">←</button><h1>${esc(lv.label)} · ${esc(st.name)}</h1></header>
     <section class="card"><p class="lead">단어 ${st.words.length}개를 익힌 뒤 퀴즈 ${st.words.length * 2}문제를 풀어요. <b>${pct(PASS_RATE)}% 이상</b> 맞히면 클리어!</p>
       ${info.cleared ? `<p class="sub">현재 기록 ${stars(info.stars)} 최고 ${pct(info.best)}%</p>` : ''}</section>
     <ul class="wordlist">${rows}</ul>
@@ -194,11 +209,12 @@ function learnView(key) {
       <div class="bar"><i style="width:${((learn.i + 1) / st.words.length) * 100}%"></i></div><span class="count">${learn.i + 1}/${st.words.length}</span></header>
     <article class="wordcard">
       <p class="pos">${POS_LABEL[w.pos]}</p>
+      ${reading(w)}
       <h2 class="en">${esc(w.en)}</h2>
-      <button class="btn ghost" data-act="speak" data-arg="${esc(w.en)}">🔊 발음 듣기</button>
+      <button class="btn ghost" data-act="speak" data-arg="${esc(w.en)}" data-lang="${ttsLangOf(w.lang)}">🔊 발음 듣기</button>
       <p class="ko">${esc(w.ko)}</p>
       <div class="example"><p class="ex">${mark(w.ex)}</p><p class="exko">${esc(w.exKo)}</p>
-        <button class="btn ghost small" data-act="speak" data-arg="${esc(w.ex.replace(/\*/g, ''))}">🔊 문장 듣기</button></div>
+        <button class="btn ghost small" data-act="speak" data-arg="${esc(w.ex.replace(/\*/g, ''))}" data-lang="${ttsLangOf(w.lang)}">🔊 문장 듣기</button></div>
     </article>
     <div class="actions sticky"><button class="btn" data-act="learn-prev" ${learn.i === 0 ? 'disabled' : ''}>이전</button>
       <button class="btn primary" data-act="learn-next">${last ? '퀴즈 시작' : '다음 단어'}</button></div></main>`;
@@ -220,22 +236,25 @@ function playView() {
   const w = wordOf(q.wordId);
   const fb = session.feedback;
   const pos = `<span class="pos">${POS_LABEL[w.pos]}</span>`;
+  const tlang = ttsLangOf(w.lang);
   let prompt = '';
   if (q.type === 'meaning') {
-    prompt = `<h2 class="en">${esc(w.en)}</h2>${pos}<button class="icon-btn" data-act="speak" data-arg="${esc(w.en)}" aria-label="발음 듣기">🔊</button>`;
+    prompt = `${reading(w)}<h2 class="en">${esc(w.en)}</h2>${pos}<button class="icon-btn" data-act="speak" data-arg="${esc(w.en)}" data-lang="${tlang}" aria-label="발음 듣기">🔊</button>`;
   } else if (q.type === 'listen') {
-    prompt = `<button class="speak-big" data-act="speak" data-arg="${esc(w.en)}" aria-label="단어 다시 듣기">🔊</button><p class="hint">들려주는 단어를 고르세요</p>`;
+    prompt = `<button class="speak-big" data-act="speak" data-arg="${esc(w.en)}" data-lang="${tlang}" aria-label="단어 다시 듣기">🔊</button><p class="hint">들려주는 단어를 고르세요</p>`;
   } else if (q.type === 'cloze') {
     prompt = `<p class="sentence">${esc(blankOut(w.ex))}</p><p class="sub">${esc(w.exKo)}</p>`;
   } else {
-    prompt = `<h2 class="ko-big">${esc(w.ko)}</h2>${pos}${q.type === 'spell' ? `<p class="spell-hint" aria-label="힌트">${esc(spellHint(w.en))}</p>` : ''}`;
+    prompt = `<h2 class="ko-big">${esc(w.ko)}</h2>${pos}${q.type === 'spell' ? `<p class="spell-hint" aria-label="힌트">${esc(spellHint(typingAnswer(w)))}</p>` : ''}`;
   }
 
   let answerArea;
   if (q.type === 'spell') {
     const state = fb ? (fb.ok ? 'ok' : 'bad') : '';
+    const label = w.lang === 'ja' ? '로마자 입력' : '영단어 입력';
+    const placeholder = w.lang === 'ja' ? '로마자로 써 보세요 (예: taberu)' : '영어로 써 보세요';
     answerArea = `<form class="spell" data-form="spell"><input class="${state}" name="answer" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
-      aria-label="영단어 입력" placeholder="영어로 써 보세요" value="${fb ? esc(fb.given) : ''}" ${fb ? 'readonly' : ''}>
+      aria-label="${label}" placeholder="${placeholder}" value="${fb ? esc(fb.given) : ''}" ${fb ? 'readonly' : ''}>
       ${fb ? '' : '<button class="btn primary" type="submit">확인</button>'}</form>
       ${fb ? '' : '<button class="link" data-act="giveup">모르겠어요</button>'}`;
   } else {
@@ -248,8 +267,8 @@ function playView() {
 
   const feedback = fb ? `<div class="feedback ${fb.ok ? 'good' : 'bad'}" role="status">
       <div class="fb-head"><span class="fb-icon" aria-hidden="true">${fb.ok ? '✓' : '✕'}</span><strong>${fb.ok ? '정답이에요!' : `아쉬워요 · 정답: ${esc(q.type === 'meaning' ? w.ko : w.en)}`}</strong></div>
-      <p class="fb-word"><b>${esc(w.en)}</b> · ${esc(w.ko)}
-        <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" aria-label="발음 듣기">🔊</button></p>
+      <p class="fb-word">${reading(w)}<b>${esc(w.en)}</b> · ${esc(w.ko)}
+        <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" data-lang="${tlang}" aria-label="발음 듣기">🔊</button></p>
       <p class="fb-ex">${mark(w.ex)}<br><span>${esc(w.exKo)}</span></p>
       <button class="btn primary block" data-act="next">${session.idx + 1 >= session.queue.length ? '결과 보기' : '다음'}</button></div>` : '';
 
@@ -286,7 +305,7 @@ function submitAnswer(input) {
   }
   store.save();
   render();
-  if (store.state.settings.sound && q.type !== 'listen') say(wordOf(q.wordId).en);
+  if (store.state.settings.sound && q.type !== 'listen') { const w = wordOf(q.wordId); say(w.en, ttsLangOf(w.lang)); }
 }
 
 function nextQuestion() {
@@ -315,7 +334,7 @@ function finishSession() {
     store.setBoss(s.key, { pass, acc });
     if (firstClear) {
       bonus = 100;
-      levelUp = LEVELS.find((l) => l.id === Number(s.key) + 1) || 'all';
+      levelUp = levelTrackNext(Number(s.key)) || 'all';
     }
   } else if (s.firstTotal > 0) {
     bonus = 20;
@@ -350,11 +369,11 @@ function resultView() {
 
   let celebrate = '';
   if (r.levelUp === 'all') celebrate = '<p class="banner">🏆 모든 레벨을 정복했어요!</p>';
-  else if (r.levelUp) celebrate = `<p class="banner">${r.levelUp.icon} Lv.${r.levelUp.id} ${esc(r.levelUp.name)} 열림!</p>`;
+  else if (r.levelUp) celebrate = `<p class="banner">${r.levelUp.icon} ${esc(r.levelUp.label)} ${esc(r.levelUp.name)} 열림!</p>`;
 
   const wrongList = r.wrong.length ? `<section class="card"><h3>다시 볼 단어</h3><ul class="wordlist compact">${r.wrong.map((id) => {
     const w = wordOf(id);
-    return `<li><span class="w-en">${esc(w.en)}</span><span class="w-ko">${esc(w.ko)}</span><button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`;
+    return `<li><span class="w-head"><span class="w-en">${esc(w.en)}</span>${reading(w)}</span><span class="w-ko">${esc(w.ko)}</span><button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" data-lang="${ttsLangOf(w.lang)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`;
   }).join('')}</ul></section>` : '';
 
   return `<main class="view focus result">
@@ -400,9 +419,9 @@ function notesView() {
   const rows = ids.map((id) => {
     const w = wordOf(id);
     const r = words[id];
-    return `<li><div class="w-main"><span class="w-en">${esc(w.en)}</span><span class="w-ko">${esc(w.ko)}</span>
+    return `<li><div class="w-main"><span class="w-head"><span class="w-en">${esc(w.en)}</span>${reading(w)}</span><span class="w-ko">${esc(w.ko)}</span>
       <small>틀린 횟수 ${r.wrong} · 연속 정답 ${r.clean}/3</small></div>
-      <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`;
+      <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" data-lang="${ttsLangOf(w.lang)}" aria-label="${esc(w.en)} 발음 듣기">🔊</button></li>`;
   }).join('');
   const body = ids.length
     ? `<ul class="wordlist notes">${rows}</ul><div class="actions sticky"><button class="btn primary" data-act="start-notes">오답 연습 (최대 10문제)</button></div>`
@@ -508,7 +527,8 @@ function bindChart() {
 // ── 이벤트 ───────────────────────────────────────────────────
 const actions = {
   go: (arg) => navigate(arg),
-  speak: (arg) => say(arg),
+  speak: (arg, el) => say(arg, el?.dataset.lang || 'en-US'),
+  'set-lang': (arg) => { store.setSetting('lang', arg); render(); },
   locked: () => toast('앞 스테이지를 먼저 클리어하세요.'),
   'locked-boss': () => toast('이 레벨의 스테이지를 모두 클리어하면 열려요.'),
   'locked-level': () => toast('이전 레벨의 레벨 테스트를 먼저 통과하세요.'),

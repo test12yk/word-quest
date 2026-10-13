@@ -1,10 +1,11 @@
-// 레벨 → 스테이지 → 단어 데이터.
-// 단어 형식: [영단어, 품사(n/v/adj/adv), 뜻, 예문(대상 단어를 *...*로 감쌈), 예문 해석]
-// 예문 속 *...*는 영단어와 똑같은 형태여야 합니다(빈칸 퀴즈가 이 표시를 이용). `node tests/test.mjs`로 검증됩니다.
+// 레벨 → 스테이지 → 단어 데이터. 언어 트랙은 두 개: 영어(RAW, 레벨 1~4) / 일본어(RAW_JA, 레벨 5~).
+// 영어 단어 형식: [영단어, 품사(n/v/adj/adv), 뜻, 예문(대상 단어를 *...*로 감쌈), 예문 해석]
+// 일본어 단어 형식은 RAW_JA 바로 위 주석 참고.
+// 예문 속 *...*는 표제어와 똑같은 형태여야 합니다(빈칸 퀴즈가 이 표시를 이용). `node tests/test.mjs`로 검증됩니다.
 
 const RAW = [
   {
-    id: 1, name: '새싹', icon: '🌱', desc: '초등~중1 기초',
+    id: 1, lang: 'en', name: '새싹', icon: '🌱', desc: '초등~중1 기초',
     stages: [
       { name: '일상 동사', words: [
         ['wake up', 'v', '일어나다', 'I *wake up* at seven every day.', '나는 매일 7시에 일어난다.'],
@@ -49,7 +50,7 @@ const RAW = [
     ],
   },
   {
-    id: 2, name: '새잎', icon: '🌿', desc: '중등 필수',
+    id: 2, lang: 'en', name: '새잎', icon: '🌿', desc: '중등 필수',
     stages: [
       { name: '생활 동사', words: [
         ['invite', 'v', '초대하다', 'I want to *invite* you to my party.', '너를 내 파티에 초대하고 싶어.'],
@@ -94,7 +95,7 @@ const RAW = [
     ],
   },
   {
-    id: 3, name: '나무', icon: '🌳', desc: '고등 기초',
+    id: 3, lang: 'en', name: '나무', icon: '🌳', desc: '고등 기초',
     stages: [
       { name: '학습과 사고', words: [
         ['concentrate', 'v', '집중하다', 'It is hard to *concentrate* in a noisy room.', '시끄러운 방에서는 집중하기 어렵다.'],
@@ -639,7 +640,7 @@ const RAW = [
     ],
   },
   {
-    id: 4, name: '숲', icon: '🌲', desc: '수능·토익 필수',
+    id: 4, lang: 'en', name: '숲', icon: '🌲', desc: '수능·토익 필수',
     stages: [
       { name: '비즈니스', words: [
         ['schedule', 'n', '일정', 'Check the meeting *schedule*.', '회의 일정을 확인하세요.'],
@@ -1185,21 +1186,86 @@ const RAW = [
   },
 ];
 
+// 일본어 단어 형식: [한자/가나 표제어, 읽기(후리가나), 로마자(스펠링 퀴즈용), 품사, 뜻, 예문(표제어를 *...*로 감쌈), 예문 해석]
+// 한자가 없는 표제어(가나만)는 읽기와 표제어가 같다. 예문은 사전형이 그대로 드러나도록 평서체로 쓴다.
+const RAW_JA = [
+  {
+    id: 5, lang: 'ja', jlpt: 'N5', name: '입문', icon: '🌸', desc: 'JLPT N5 · 입문',
+    stages: [
+      { name: '일상 동사', words: [
+        ['行く', 'いく', 'iku', 'v', '가다', '明日、学校に*行く*。', '내일 학교에 간다.'],
+        ['来る', 'くる', 'kuru', 'v', '오다', '友達が家に*来る*。', '친구가 집에 온다.'],
+        ['見る', 'みる', 'miru', 'v', '보다', 'テレビを*見る*のが好きだ。', '텔레비전 보는 것을 좋아한다.'],
+        ['聞く', 'きく', 'kiku', 'v', '듣다', '音楽を*聞く*のが好きだ。', '음악 듣는 것을 좋아한다.'],
+        ['読む', 'よむ', 'yomu', 'v', '읽다', '毎晩本を*読む*。', '매일 밤 책을 읽는다.'],
+        ['書く', 'かく', 'kaku', 'v', '쓰다', '手紙を*書く*。', '편지를 쓴다.'],
+        ['話す', 'はなす', 'hanasu', 'v', '말하다', '日本語で*話す*。', '일본어로 말한다.'],
+        ['食べる', 'たべる', 'taberu', 'v', '먹다', '朝ご飯を*食べる*。', '아침밥을 먹는다.'],
+      ] },
+      { name: '사람과 가족', words: [
+        ['友達', 'ともだち', 'tomodachi', 'n', '친구', '*友達*と映画を見る。', '친구와 영화를 본다.'],
+        ['家族', 'かぞく', 'kazoku', 'n', '가족', '*家族*と旅行に行く。', '가족과 여행을 간다.'],
+        ['先生', 'せんせい', 'sensei', 'n', '선생님', '*先生*はとても親切だ。', '선생님은 매우 친절하다.'],
+        ['学生', 'がくせい', 'gakusei', 'n', '학생', '私は大学の*学生*だ。', '나는 대학생이다.'],
+        ['会社員', 'かいしゃいん', 'kaishain', 'n', '회사원', '父は*会社員*だ。', '아버지는 회사원이다.'],
+        ['子供', 'こども', 'kodomo', 'n', '아이', '公園で*子供*が遊ぶ。', '공원에서 아이가 논다.'],
+        ['男', 'おとこ', 'otoko', 'n', '남자', 'あの*男*は背が高い。', '저 남자는 키가 크다.'],
+        ['女', 'おんな', 'onna', 'n', '여자', 'その*女*は医者だ。', '그 여자는 의사다.'],
+      ] },
+      { name: '장소', words: [
+        ['学校', 'がっこう', 'gakkou', 'n', '학교', '毎日*学校*に行く。', '매일 학교에 간다.'],
+        ['家', 'いえ', 'ie', 'n', '집', '*家*でゆっくり休む。', '집에서 푹 쉰다.'],
+        ['駅', 'えき', 'eki', 'n', '기차역', '*駅*で友達を待つ。', '기차역에서 친구를 기다린다.'],
+        ['公園', 'こうえん', 'kouen', 'n', '공원', '*公園*を散歩する。', '공원을 산책한다.'],
+        ['店', 'みせ', 'mise', 'n', '가게', 'この*店*はパンがおいしい。', '이 가게는 빵이 맛있다.'],
+        ['部屋', 'へや', 'heya', 'n', '방', '*部屋*を掃除する。', '방을 청소한다.'],
+        ['銀行', 'ぎんこう', 'ginkou', 'n', '은행', '*銀行*でお金を下ろす。', '은행에서 돈을 찾는다.'],
+        ['郵便局', 'ゆうびんきょく', 'yuubinkyoku', 'n', '우체국', '*郵便局*で切手を買う。', '우체국에서 우표를 산다.'],
+      ] },
+      { name: '시간과 형용사', words: [
+        ['今日', 'きょう', 'kyou', 'n', '오늘', '*今日*は晴れだ。', '오늘은 맑다.'],
+        ['明日', 'あした', 'ashita', 'n', '내일', '*明日*テストがある。', '내일 시험이 있다.'],
+        ['時間', 'じかん', 'jikan', 'n', '시간', '*時間*がない。', '시간이 없다.'],
+        ['大きい', 'おおきい', 'ookii', 'adj', '큰', 'この犬は*大きい*。', '이 개는 크다.'],
+        ['小さい', 'ちいさい', 'chiisai', 'adj', '작은', 'この部屋は*小さい*。', '이 방은 작다.'],
+        ['新しい', 'あたらしい', 'atarashii', 'adj', '새로운', '*新しい*靴を買う。', '새 신발을 산다.'],
+        ['高い', 'たかい', 'takai', 'adj', '비싼', 'このかばんは*高い*。', '이 가방은 비싸다.'],
+        ['安い', 'やすい', 'yasui', 'adj', '싼', '野菜が*安い*。', '채소가 싸다.'],
+      ] },
+    ],
+  },
+];
+
 export const POS_LABEL = { n: '명사', v: '동사', adj: '형용사', adv: '부사' };
 
-export const LEVELS = RAW.map((lv) => ({
+// 언어 메타(이름/음성합성 lang 코드/레벨 라벨 규칙). 라벨은 영어는 "Lv.1"처럼, 일본어는 JLPT 급수(N5 등) 그대로.
+export const LANGUAGES = [
+  { id: 'en', name: '영어', icon: '🇬🇧', ttsLang: 'en-US' },
+  { id: 'ja', name: '일본어', icon: '🇯🇵', ttsLang: 'ja-JP' },
+];
+const labelOf = (lang, lv) => (lang === 'ja' ? lv.jlpt : `Lv.${lv.id}`);
+
+export const LEVELS = [...RAW, ...RAW_JA].map((lv) => ({
   id: lv.id,
+  lang: lv.lang,
+  label: labelOf(lv.lang, lv),
   name: lv.name,
   icon: lv.icon,
   desc: lv.desc,
   stages: lv.stages.map((st, si) => ({
     key: `${lv.id}-${si + 1}`,
     level: lv.id,
+    lang: lv.lang,
     index: si,
     name: st.name,
-    words: st.words.map(([en, pos, ko, ex, exKo]) => ({
-      id: en, en, pos, ko, ex, exKo, level: lv.id, stage: `${lv.id}-${si + 1}`,
-    })),
+    words: st.words.map((tuple) => {
+      if (lv.lang === 'ja') {
+        const [ja, reading, romaji, pos, ko, ex, exKo] = tuple;
+        return { id: ja, en: ja, reading, romaji, pos, ko, ex, exKo, level: lv.id, lang: 'ja', stage: `${lv.id}-${si + 1}` };
+      }
+      const [en, pos, ko, ex, exKo] = tuple;
+      return { id: en, en, reading: null, romaji: null, pos, ko, ex, exKo, level: lv.id, lang: 'en', stage: `${lv.id}-${si + 1}` };
+    }),
   })),
 }));
 
@@ -1208,3 +1274,20 @@ export const WORD_BY_ID = new Map(ALL_WORDS.map((w) => [w.id, w]));
 export const STAGE_BY_KEY = new Map(LEVELS.flatMap((lv) => lv.stages.map((st) => [st.key, st])));
 
 export const levelWords = (levelId) => ALL_WORDS.filter((w) => w.level === levelId);
+export const langLevels = (lang) => LEVELS.filter((lv) => lv.lang === lang);
+
+// 같은 언어 트랙 안에서 이전/다음 레벨을 찾는다(언어마다 레벨 id가 이어지지 않을 수 있어 id±1로 추측하면 안 됨).
+export function levelTrackPrev(levelId) {
+  const lv = LEVELS.find((l) => l.id === levelId);
+  if (!lv) return null;
+  const track = langLevels(lv.lang);
+  const idx = track.findIndex((l) => l.id === levelId);
+  return idx > 0 ? track[idx - 1] : null;
+}
+export function levelTrackNext(levelId) {
+  const lv = LEVELS.find((l) => l.id === levelId);
+  if (!lv) return null;
+  const track = langLevels(lv.lang);
+  const idx = track.findIndex((l) => l.id === levelId);
+  return idx >= 0 && idx < track.length - 1 ? track[idx + 1] : null;
+}

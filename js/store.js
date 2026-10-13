@@ -1,5 +1,5 @@
 // 학습 기록 저장소. localStorage에 JSON으로 저장하고, 테스트에서는 storage/clock을 바꿔 끼운다.
-import { LEVELS, STAGE_BY_KEY } from './data.js';
+import { LEVELS, STAGE_BY_KEY, levelTrackPrev } from './data.js';
 import { newRecord, isDue } from './srs.js';
 
 const KEY = 'wordquest.v1';
@@ -19,7 +19,7 @@ const defaults = () => ({
   stages: {},        // '1-1' → { cleared, stars, best }
   bosses: {},        // '1' → { cleared, best }
   words: {},         // 단어 id → srs 레코드
-  settings: { goal: 20, sound: true, rate: 0.9, notify: false, notifyTime: '20:00' },
+  settings: { goal: 20, sound: true, rate: 0.9, notify: false, notifyTime: '20:00', lang: 'en' },
   lastNotified: '',
 });
 
@@ -85,8 +85,10 @@ export function createStore(storage = globalThis.localStorage, clock = Date.now)
     // 진행도/잠금
     stageInfo: (key) => state.stages[key] || { cleared: false, stars: 0, best: 0 },
     bossInfo: (levelId) => state.bosses[levelId] || { cleared: false, best: 0 },
+    // 레벨은 언어 트랙(영어 1~4 / 일본어 N5~) 안에서만 순서대로 풀린다 — 각 트랙의 첫 레벨은 항상 열려있음.
     isLevelUnlocked(levelId) {
-      return levelId === 1 || Boolean(state.bosses[levelId - 1]?.cleared);
+      const prev = levelTrackPrev(levelId);
+      return !prev || Boolean(state.bosses[prev.id]?.cleared);
     },
     isStageUnlocked(key) {
       const st = STAGE_BY_KEY.get(key);

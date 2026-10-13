@@ -56,7 +56,7 @@ export function makeQuestion(type, word, rng = Math.random) {
     q.answer = word.en;
     q.choices = shuffle([word.en, ...distractors(word, 'en', 3, rng)], rng);
   } else {
-    q.answer = word.en; // spell
+    q.answer = word.romaji || word.en; // spell: 일본어는 로마자로, 영어는 그대로
   }
   return q;
 }

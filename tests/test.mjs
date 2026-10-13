@@ -1,6 +1,6 @@
 // 실행: node tests/test.mjs  (의존성 없음)
 import assert from 'node:assert/strict';
-import { LEVELS, ALL_WORDS, WORD_BY_ID } from '../js/data.js';
+import { LEVELS, ALL_WORDS, WORD_BY_ID, langLevels, levelTrackPrev, levelTrackNext } from '../js/data.js';
 import { makeQuestion, checkAnswer, stageQuestions, bossQuestions, reviewQuestions, retryQuestion, blankOut, spellHint } from '../js/quiz.js';
 import { newRecord, recordStats, schedule, scheduleStage, isDue, nextDue, startOfDay, INTERVALS } from '../js/srs.js';
 import { createStore, dateStr } from '../js/store.js';
@@ -9,24 +9,36 @@ let passed = 0;
 const test = (name, fn) => { fn(); passed += 1; console.log(`  ✓ ${name}`); };
 
 console.log('데이터');
-test('레벨 4개, 스테이지마다 단어 8개(스테이지 수는 레벨별로 늘어날 수 있음)', () => {
-  assert.equal(LEVELS.length, 4);
+test('언어 트랙(영어 4레벨, 일본어 1레벨 이상), 스테이지마다 단어 8개', () => {
+  assert.equal(langLevels('en').length, 4);
+  assert.ok(langLevels('ja').length >= 1);
   for (const lv of LEVELS) {
-    assert.ok(lv.stages.length >= 4, `Lv${lv.id} 스테이지 수`);
+    assert.ok(lv.stages.length >= 4, `${lv.label} 스테이지 수`);
     for (const st of lv.stages) assert.equal(st.words.length, 8, `${st.key} 단어 수`);
   }
 });
-test('단어 id·뜻이 중복되지 않는다(오답 보기가 정답과 겹치지 않도록)', () => {
+test('단어 id·뜻이 중복되지 않는다(오답 보기가 정답과 겹치지 않도록, 언어 섞여도 동일)', () => {
   assert.equal(new Set(ALL_WORDS.map((w) => w.id)).size, ALL_WORDS.length);
   assert.equal(new Set(ALL_WORDS.map((w) => w.ko)).size, ALL_WORDS.length);
 });
-test('예문의 *표시*가 영단어와 정확히 같다', () => {
+test('예문의 *표시*가 표제어와 정확히 같다', () => {
   for (const w of ALL_WORDS) {
     const m = w.ex.match(/\*([^*]+)\*/g);
     assert.equal(m?.length, 1, `${w.id}: 표시가 정확히 1개여야 함`);
     assert.equal(m[0].slice(1, -1).toLowerCase(), w.en.toLowerCase(), `${w.id}: 예문 표시 불일치`);
     assert.ok(w.exKo && w.ko && ['n', 'v', 'adj', 'adv'].includes(w.pos), `${w.id}: 필드 누락`);
   }
+});
+test('일본어 단어는 읽기(후리가나)·로마자가 모두 채워져 있다', () => {
+  for (const w of ALL_WORDS.filter((w) => w.lang === 'ja')) {
+    assert.ok(w.reading, `${w.id}: 읽기 누락`);
+    assert.ok(w.romaji, `${w.id}: 로마자 누락`);
+  }
+});
+test('레벨 트랙 이동: 각 언어의 첫 레벨은 이전이 없고, 마지막은 다음이 없다', () => {
+  assert.equal(levelTrackPrev(1), null); // 영어 첫 레벨
+  assert.equal(levelTrackNext(4), null); // 영어 마지막 레벨(지금까지는)
+  assert.equal(levelTrackPrev(5), null); // 일본어 첫 레벨(N5)
 });
 
 console.log('문제 생성');
@@ -52,6 +64,13 @@ test('채점: 보기는 정확 일치, 스펠링은 대소문자·공백 무시'
 test('빈칸 문제와 스펠링 힌트', () => {
   assert.equal(blankOut(WORD_BY_ID.get('borrow').ex), 'Can I _____ your pen?');
   assert.equal(spellHint('wake up'), 'w___ u_');
+});
+test('일본어 스펠링 문제는 로마자로 채점한다', () => {
+  const w = WORD_BY_ID.get('食べる');
+  const q = makeQuestion('spell', w);
+  assert.equal(q.answer, 'taberu');
+  assert.ok(checkAnswer(q, '  Taberu '));
+  assert.ok(!checkAnswer(q, '食べる'));
 });
 test('스테이지는 16문제, 모든 단어가 2번씩 나온다', () => {
   const st = LEVELS[0].stages[0];
@@ -143,6 +162,10 @@ test('잠금: 스테이지 순서대로, 보스는 4개 클리어 후, 다음 �
   assert.ok(s.isBossUnlocked(1) && !s.isStageUnlocked('2-1'));
   s.setBoss(1, { pass: true, acc: 0.9 });
   assert.ok(s.isStageUnlocked('2-1') && !s.isStageUnlocked('2-2'));
+});
+test('잠금: 언어 트랙이 분리되어, 영어 레벨과 상관없이 일본어 첫 레벨(N5)은 항상 열려있다', () => {
+  const s = createStore(memory());
+  assert.ok(s.isLevelUnlocked(5) && s.isStageUnlocked('5-1') && !s.isStageUnlocked('5-2'));
 });
 test('저장 후 다시 불러오기, 백업 가져오기, 초기화', () => {
   const storage = memory();

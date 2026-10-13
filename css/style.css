@@ -105,6 +105,9 @@ mark { background: var(--primary-soft); color: var(--primary-strong); padding: 0
 .goal-row { display: flex; justify-content: space-between; align-items: baseline; }
 .goal-row span { color: var(--ink-2); font-size: 14px; font-weight: 600; }
 .level-icon { width: 48px; height: 48px; border-radius: 14px; background: var(--primary-soft); display: grid; place-items: center; font-size: 26px; flex: none; }
+.lang-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.lang-tab { flex: 1; padding: 10px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); font-weight: 700; font-size: 14px; color: var(--ink-2); }
+.lang-tab.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-strong); }
 .levels { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .level-card { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); min-height: 72px; }
 .level-card .meta { flex: 1; min-width: 0; display: grid; gap: 4px; }
@@ -138,7 +141,9 @@ mark { background: var(--primary-soft); color: var(--primary-strong); padding: 0
 .wordlist { list-style: none; margin: 0 0 8px; padding: 0; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
 .wordlist li { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
 .wordlist li:last-child { border-bottom: 0; }
-.w-en { font-weight: 800; min-width: 7.5em; }
+.w-head { min-width: 7.5em; display: grid; gap: 1px; }
+.w-en { font-weight: 800; }
+.reading { font-size: 12px; font-weight: 600; color: var(--ink-3); }
 .w-ko { color: var(--ink-2); flex: 1; }
 .w-main { flex: 1; display: grid; }
 .w-main small { color: var(--ink-3); font-size: 13px; }
@@ -153,6 +158,7 @@ mark { background: var(--primary-soft); color: var(--primary-strong); padding: 0
 .wordcard { background: var(--surface); border-radius: 24px; box-shadow: var(--shadow); padding: 28px 20px; text-align: center; display: grid; gap: 12px; justify-items: center; }
 .wordcard .pos, .prompt .pos { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 13px; font-weight: 700; }
 .wordcard .en { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; word-break: keep-all; }
+.wordcard .reading, .fb-word .reading { font-size: 15px; }
 .wordcard .ko { font-size: 24px; font-weight: 700; color: var(--primary-strong); }
 .example { width: 100%; margin-top: 8px; padding: 16px; border-radius: 14px; background: var(--surface-2); display: grid; gap: 8px; justify-items: center; }
 .example .ex { font-size: 18px; line-height: 1.5; }
@@ -162,6 +168,7 @@ mark { background: var(--primary-soft); color: var(--primary-strong); padding: 0
 .qtype { color: var(--primary-strong); font-weight: 800; font-size: 14px; margin-bottom: 12px; }
 .prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 10px; min-height: 120px; align-content: center; }
 .prompt .en { font-size: 36px; font-weight: 800; letter-spacing: -.02em; }
+.prompt .reading { flex-basis: 100%; font-size: 16px; }
 .prompt .ko-big { font-size: 30px; font-weight: 800; }
 .prompt .sentence { flex-basis: 100%; font-size: 22px; font-weight: 700; line-height: 1.45; }
 .prompt .sub, .prompt .hint { flex-basis: 100%; }
