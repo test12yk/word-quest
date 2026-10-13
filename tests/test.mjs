@@ -139,6 +139,14 @@ test('nextDue는 box 0이면 지금', () => assert.equal(nextDue(0, 123), 123));
 
 console.log('저장소');
 const memory = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; };
+test('오늘의 목표는 언어별로 따로 집계되고, 인자 없이 부르면 합산이다', () => {
+  const s = createStore(memory());
+  s.addActivity({ questions: 3, correct: 2, xp: 10, lang: 'en' });
+  s.addActivity({ questions: 2, correct: 1, xp: 10, lang: 'ja' });
+  assert.equal(s.todayCount('en'), 3);
+  assert.equal(s.todayCount('ja'), 2);
+  assert.equal(s.todayCount(), 5);
+});
 test('스트릭: 연속일은 늘고, 하루 걸러면 1로 돌아간다', () => {
   let t = new Date(2026, 8, 1, 10).getTime();
   const s = createStore(memory(), () => t);

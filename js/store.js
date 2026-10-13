@@ -56,12 +56,14 @@ export function createStore(storage = globalThis.localStorage, clock = Date.now)
     },
 
     // 활동 기록: 문제 수/정답 수/XP를 오늘 기록에 더하고, 문제를 풀었으면 스트릭을 갱신
-    addActivity({ questions = 0, correct = 0, xp = 0 }) {
+    // q/c/xp는 두 언어 합산(14일 그래프 등 기존 통계용), byLang은 "오늘의 목표"를 언어별로 보여주기 위한 보조 집계.
+    addActivity({ questions = 0, correct = 0, xp = 0, lang = null }) {
       const t = store.today();
-      const day = (state.days[t] ||= { q: 0, c: 0, xp: 0 });
+      const day = (state.days[t] ||= { q: 0, c: 0, xp: 0, byLang: {} });
       day.q += questions;
       day.c += correct;
       day.xp += xp;
+      if (lang && questions > 0) day.byLang[lang] = (day.byLang[lang] || 0) + questions;
       state.xp += xp;
       if (questions > 0) touchStreak(t);
       save();
@@ -74,7 +76,11 @@ export function createStore(storage = globalThis.localStorage, clock = Date.now)
       const y = dateStr(clock() - DAY);
       return last === t || last === y ? count : 0;
     },
-    todayCount: () => (state.days[store.today()] || { q: 0 }).q,
+    // lang을 주면 그 언어만의 오늘 문제 수, 안 주면 두 언어 합산(기존 동작 유지, 통계 화면 등에서 사용).
+    todayCount: (lang = null) => {
+      const day = state.days[store.today()] || { q: 0, byLang: {} };
+      return lang ? (day.byLang?.[lang] || 0) : day.q;
+    },
 
     dueIds() {
       const now = clock();

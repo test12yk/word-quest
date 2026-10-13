@@ -108,7 +108,7 @@ const $ = (sel) => app.querySelector(sel);
 // 홈에는 레벨 카드 4개만 두고 실제 스테이지 목록은 levelView(/level/:id)로 분리했다.
 function homeView() {
   const { goal, lang } = store.state.settings;
-  const done = store.todayCount();
+  const done = store.todayCount(lang); // 오늘의 목표는 현재 탭 언어 기준(언어별로 따로 집계)
   const due = store.dueIds().length;
   const langTabs = LANGUAGES.map((l) => `<button class="lang-tab ${lang === l.id ? 'active' : ''}" data-act="set-lang" data-arg="${l.id}" ${lang === l.id ? 'aria-current="true"' : ''}>${l.icon} ${esc(l.name)}</button>`).join('');
   const cards = LEVELS.filter((lv) => lv.lang === lang).map((lv) => {
@@ -294,7 +294,7 @@ function submitAnswer(input) {
     if (ok) session.firstCorrect += 1; else session.wrong.add(q.wordId);
     const xp = ok ? 10 : 0;
     session.xp += xp;
-    store.addActivity({ questions: 1, correct: ok ? 1 : 0, xp });
+    store.addActivity({ questions: 1, correct: ok ? 1 : 0, xp, lang: wordOf(q.wordId).lang });
   }
   if (!ok) { // 틀린 단어는 다른 유형으로 최대 2번까지 다시 묻는다
     const n = session.retries[q.wordId] || 0;
