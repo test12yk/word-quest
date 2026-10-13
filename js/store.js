@@ -60,6 +60,7 @@ export function createStore(storage = globalThis.localStorage, clock = Date.now)
     addActivity({ questions = 0, correct = 0, xp = 0, lang = null }) {
       const t = store.today();
       const day = (state.days[t] ||= { q: 0, c: 0, xp: 0, byLang: {} });
+      day.byLang ||= {}; // byLang 도입 전에 이미 만들어진 오늘 기록일 수 있어 없으면 보충
       day.q += questions;
       day.c += correct;
       day.xp += xp;

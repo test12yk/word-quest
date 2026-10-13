@@ -147,6 +147,19 @@ test('오늘의 목표는 언어별로 따로 집계되고, 인자 없이 부르
   assert.equal(s.todayCount('ja'), 2);
   assert.equal(s.todayCount(), 5);
 });
+test('byLang 도입 전에 저장된 오늘 기록(필드 없음)이어도 addActivity가 에러 없이 동작한다', () => {
+  const storage = memory();
+  const t = dateStr(Date.now());
+  storage.setItem('wordquest.v1', JSON.stringify({
+    v: 1, xp: 0, streak: { count: 0, best: 0, last: '' },
+    days: { [t]: { q: 3, c: 2, xp: 30 } }, // byLang 없는 구버전 기록
+    stages: {}, bosses: {}, words: {}, settings: {}, lastNotified: '',
+  }));
+  const s = createStore(storage);
+  assert.doesNotThrow(() => s.addActivity({ questions: 1, correct: 1, xp: 10, lang: 'ja' }));
+  assert.equal(s.todayCount('ja'), 1);
+  assert.equal(s.todayCount(), 4);
+});
 test('스트릭: 연속일은 늘고, 하루 걸러면 1로 돌아간다', () => {
   let t = new Date(2026, 8, 1, 10).getTime();
   const s = createStore(memory(), () => t);
