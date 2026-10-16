@@ -3,8 +3,10 @@ import { LEVELS, STAGE_BY_KEY, WORD_BY_ID, POS_LABEL, LANGUAGES, levelTrackNext 
 import { createStore, dateStr } from './store.js';
 import {
   TYPE_LABEL, makeQuestion, stageQuestions, bossQuestions, reviewQuestions, retryQuestion,
-  checkAnswer, blankOut, spellHint,
+  checkAnswer, blankOut, spellHint, writeHint,
 } from './quiz.js';
+import { conjugate, verbClass, FORMS, FORM_KEYS, CLASS_LABEL } from './conj.js';
+import { toHiragana, isRomaji } from './kana.js';
 import { recordStats, schedule, scheduleStage, startOfDay, isMastered } from './srs.js';
 import { speak, canSpeak } from './tts.js';
 import { maybeNotify, requestNotify, notifyPermission, notifySupported, setBadge } from './notify.js';
@@ -27,7 +29,13 @@ const ttsLangOf = (lang) => LANGUAGES.find((l) => l.id === lang)?.ttsLang || 'en
 const say = (text, lang = 'en-US') => speak(text, store.state.settings.rate, lang);
 const wordOf = (id) => WORD_BY_ID.get(id);
 // 일본어 표제어 위에 후리가나(읽기)를 보여줄 때 쓰는 조각. 한자 없이 가나뿐인 단어는 읽기=표제어라 생략.
-const reading = (w) => (w.reading && w.reading !== w.en ? `<p class="reading">${esc(w.reading)}</p>` : '');
+// 설정에서 후리가나를 끄면 흐리게 가려지고, 누르면 보인다(data-act="reveal").
+const reading = (w) => (w.reading && w.reading !== w.en ? `<p class="reading" data-act="reveal" title="눌러서 읽기 보기">${esc(w.reading)}</p>` : '');
+// 일본어 동사 활용표(단어 카드·피드백에서 사용)
+const conjTable = (w) => (w.lang === 'ja' && verbClass(w) ? `<div class="conj-table"><p class="conj-cls">${CLASS_LABEL[verbClass(w)]}</p><dl>${FORM_KEYS.map((f) => {
+  const c = conjugate(w, f);
+  return `<div><dt>${FORMS[f].label}</dt><dd>${esc(c.form)}${c.form !== c.reading ? `<small>${esc(c.reading)}</small>` : ''}</dd></div>`;
+}).join('')}</dl></div>` : '');
 const typingAnswer = (w) => w.romaji || w.en;
 const stars = (n) => `<span class="stars" role="img" aria-label="별 ${n}개">${[0, 1, 2].map((i) => `<span class="${i < n ? 'on' : ''}">★</span>`).join('')}</span>`;
 
@@ -56,6 +64,7 @@ const icon = (name) => `<svg viewBox="0 0 24 24" width="24" height="24" fill="no
 function render() {
   const [, name = '', arg] = location.hash.slice(1).split('/');
   const focusMode = ['learn', 'play', 'result'].includes(name);
+  document.body.classList.toggle('no-furigana', store.state.settings.furigana === false);
   document.body.dataset.route = focusMode ? 'focus' : name || 'home';
 
   if (name === 'play' && !session) return navigate('/');
@@ -219,6 +228,7 @@ function learnView(key) {
       <p class="ko">${esc(w.ko)}</p>
       <div class="example"><p class="ex">${mark(w.ex)}</p><p class="exko">${esc(w.exKo)}</p>
         <button class="btn ghost small" data-act="speak" data-arg="${esc(w.ex.replace(/\*/g, ''))}" data-lang="${ttsLangOf(w.lang)}">🔊 문장 듣기</button></div>
+      ${conjTable(w)}
     </article>
     <div class="actions sticky"><button class="btn" data-act="learn-prev" ${learn.i === 0 ? 'disabled' : ''}>이전</button>
       <button class="btn primary" data-act="learn-next">${last ? '퀴즈 시작' : '다음 단어'}</button></div></main>`;
@@ -248,18 +258,26 @@ function playView() {
     prompt = `<button class="speak-big" data-act="speak" data-arg="${esc(w.en)}" data-lang="${tlang}" aria-label="단어 다시 듣기">🔊</button><p class="hint">들려주는 단어를 고르세요</p>`;
   } else if (q.type === 'cloze') {
     prompt = `<p class="sentence">${esc(blankOut(w.ex))}</p><p class="sub">${esc(w.exKo)}</p>`;
+  } else if (q.type === 'write') {
+    prompt = `<p class="sentence">${esc(blankOut(w.ex))}</p><p class="sub">${esc(w.exKo)}</p><p class="write-meta"><b>${esc(w.ko)}</b> · 힌트 <span class="spell-hint inline">${esc(writeHint(w))}</span></p>`;
+  } else if (q.type === 'kanji') {
+    prompt = `<h2 class="en">${esc(w.en)}</h2>${pos}<p class="hint">읽는 법을 고르세요</p>`;
+  } else if (q.type === 'conj') {
+    prompt = `${reading(w)}<h2 class="en">${esc(w.en)}</h2><p class="sub">${esc(w.ko)}</p><p class="conj-ask"><b>${FORMS[q.form].label}</b> ${FORMS[q.form].desc}으로 바꾸면?</p>`;
   } else {
     prompt = `<h2 class="ko-big">${esc(w.ko)}</h2>${pos}${q.type === 'spell' ? `<p class="spell-hint" aria-label="힌트">${esc(spellHint(typingAnswer(w)))}</p>` : ''}`;
   }
 
   let answerArea;
-  if (q.type === 'spell') {
+  if (q.type === 'spell' || q.type === 'write') {
     const state = fb ? (fb.ok ? 'ok' : 'bad') : '';
-    const label = w.lang === 'ja' ? '로마자 입력' : '영단어 입력';
-    const placeholder = w.lang === 'ja' ? '로마자로 써 보세요 (예: taberu)' : '영어로 써 보세요';
+    const ja = w.lang === 'ja';
+    const label = q.type === 'write' ? '빈칸에 들어갈 단어 입력' : ja ? '로마자 입력' : '영단어 입력';
+    const placeholder = q.type === 'write' && ja ? '로마자·가나·한자 모두 OK (예: taberu)' : ja ? '로마자로 써 보세요 (예: taberu)' : '영어로 써 보세요';
     answerArea = `<form class="spell" data-form="spell"><input class="${state}" name="answer" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"
       aria-label="${label}" placeholder="${placeholder}" value="${fb ? esc(fb.given) : ''}" ${fb ? 'readonly' : ''}>
       ${fb ? '' : '<button class="btn primary" type="submit">확인</button>'}</form>
+      ${ja ? `<p class="kana-preview" aria-live="polite">${fb && isRomaji(fb.given) ? esc(toHiragana(fb.given)) : ''}</p>` : ''}
       ${fb ? '' : '<button class="link" data-act="giveup">모르겠어요</button>'}`;
   } else {
     answerArea = `<div class="choices">${q.choices.map((c, i) => {
@@ -270,7 +288,8 @@ function playView() {
   }
 
   const feedback = fb ? `<div class="feedback ${fb.ok ? 'good' : 'bad'}" role="status">
-      <div class="fb-head"><span class="fb-icon" aria-hidden="true">${fb.ok ? '✓' : '✕'}</span><strong>${fb.ok ? '정답이에요!' : `아쉬워요 · 정답: ${esc(q.type === 'meaning' ? w.ko : w.en)}`}</strong></div>
+      <div class="fb-head"><span class="fb-icon" aria-hidden="true">${fb.ok ? '✓' : '✕'}</span><strong>${fb.ok ? '정답이에요!' : `아쉬워요 · 정답: ${esc(q.type === 'meaning' ? w.ko : ['kanji', 'conj'].includes(q.type) ? q.answer : w.en)}`}</strong></div>
+      ${q.type === 'conj' ? `<p class="fb-rule">${CLASS_LABEL[verbClass(w)]} · ${esc(q.rule)}${q.answer !== q.answerReading ? ` · ${esc(q.answer)}(${esc(q.answerReading)})` : ''}</p>` : ''}
       <p class="fb-word">${reading(w)}<b>${esc(w.en)}</b> · ${esc(w.ko)}
         <button class="icon-btn small" data-act="speak" data-arg="${esc(w.en)}" data-lang="${tlang}" aria-label="발음 듣기">🔊</button></p>
       <p class="fb-ex">${mark(w.ex)}<br><span>${esc(w.exKo)}</span></p>
@@ -506,6 +525,7 @@ function meView() {
       <label class="row"><span>하루 목표</span><select data-setting="goal">${[10, 20, 30, 50].map((n) => `<option value="${n}" ${st.goal === n ? 'selected' : ''}>${n}문제</option>`).join('')}</select></label>
       <label class="row"><span>발음 자동 재생</span><input type="checkbox" class="switch" data-setting="sound" ${st.sound ? 'checked' : ''} ${canSpeak() ? '' : 'disabled'}></label>
       <label class="row"><span>발음 속도</span><select data-setting="rate">${[[0.7, '느리게'], [0.9, '보통'], [1.1, '빠르게']].map(([v, l]) => `<option value="${v}" ${st.rate === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="row"><span>일본어 후리가나 표시<small class="row-sub">끄면 가려지고, 눌러야 보여요</small></span><input type="checkbox" class="switch" data-setting="furigana" ${st.furigana !== false ? 'checked' : ''}></label>
       <label class="row"><span>복습 알림</span><input type="checkbox" class="switch" data-setting="notify" ${st.notify && notifyPermission() === 'granted' ? 'checked' : ''} ${notifySupported() ? '' : 'disabled'}></label>
       <label class="row"><span>알림 시각</span><input type="time" data-setting="notifyTime" value="${esc(st.notifyTime)}"></label>
       <p class="note">${notifySupported() ? '알림은 앱이 열려 있거나 백그라운드에서 실행 중일 때 울려요. 홈 화면에 설치하면 더 안정적이에요.' : '이 브라우저는 알림을 지원하지 않아요.'}${notifyPermission() === 'denied' ? ' 브라우저 설정에서 알림이 차단되어 있어요.' : ''}</p>
@@ -538,6 +558,7 @@ function bindChart() {
 const actions = {
   go: (arg) => navigate(arg),
   speak: (arg, el) => say(arg, el?.dataset.lang || 'en-US'),
+  reveal: (arg, el) => el?.classList.add('shown'),
   'set-lang': (arg) => { store.setSetting('lang', arg); render(); },
   locked: () => toast('앞 스테이지를 먼저 클리어하세요.'),
   'locked-boss': () => toast('이 레벨의 스테이지를 모두 클리어하면 열려요.'),
@@ -598,6 +619,14 @@ app.addEventListener('submit', (e) => {
   const value = new FormData(e.target).get('answer') || '';
   if (!value.trim()) return;
   submitAnswer(value);
+});
+
+// 일본어 입력칸: 로마자를 치는 동안 가나로 어떻게 바뀌는지 바로 보여준다.
+app.addEventListener('input', (e) => {
+  const preview = e.target.closest('.spell') && $('.kana-preview');
+  if (!preview) return;
+  const v = e.target.value.trim();
+  preview.textContent = v && isRomaji(v) ? toHiragana(v) : '';
 });
 
 app.addEventListener('change', async (e) => {

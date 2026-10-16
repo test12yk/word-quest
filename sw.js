@@ -1,9 +1,9 @@
 // 오프라인 캐시: 앱 파일을 미리 저장해 두고, 네트워크가 안 되면 저장본을 쓴다.
 // 파일을 수정했다면 VERSION을 올려야 기존 사용자에게 새 파일이 반영된다.
-const VERSION = 'wordquest-v17';
+const VERSION = 'wordquest-v19';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
-  'js/app.js', 'js/data.js', 'js/quiz.js', 'js/srs.js', 'js/store.js', 'js/tts.js', 'js/notify.js',
+  'js/app.js', 'js/data.js', 'js/quiz.js', 'js/srs.js', 'js/store.js', 'js/tts.js', 'js/notify.js', 'js/kana.js', 'js/conj.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

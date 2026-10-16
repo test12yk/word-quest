@@ -19,7 +19,7 @@ const defaults = () => ({
   stages: {},        // '1-1' → { cleared, stars, best }
   bosses: {},        // '1' → { cleared, best }
   words: {},         // 단어 id → srs 레코드
-  settings: { goal: 20, sound: true, rate: 0.9, notify: false, notifyTime: '20:00', lang: 'en' },
+  settings: { goal: 20, sound: true, rate: 0.9, notify: false, notifyTime: '20:00', lang: 'en', furigana: true },
   lastNotified: '',
 });
 

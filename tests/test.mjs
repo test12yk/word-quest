@@ -1,7 +1,9 @@
 // 실행: node tests/test.mjs  (의존성 없음)
 import assert from 'node:assert/strict';
 import { LEVELS, ALL_WORDS, WORD_BY_ID, langLevels, levelTrackPrev, levelTrackNext } from '../js/data.js';
-import { makeQuestion, checkAnswer, stageQuestions, bossQuestions, reviewQuestions, retryQuestion, blankOut, spellHint } from '../js/quiz.js';
+import { makeQuestion, checkAnswer, stageQuestions, bossQuestions, reviewQuestions, retryQuestion, blankOut, spellHint, writeHint, typesFor, hasKanji } from '../js/quiz.js';
+import { toHiragana, normalizeKana } from '../js/kana.js';
+import { conjugate, verbClass, FORM_KEYS } from '../js/conj.js';
 import { newRecord, recordStats, schedule, scheduleStage, isDue, nextDue, startOfDay, INTERVALS } from '../js/srs.js';
 import { createStore, dateStr } from '../js/store.js';
 
@@ -17,9 +19,13 @@ test('언어 트랙(영어 4레벨, 일본어 1레벨 이상), 스테이지마�
     for (const st of lv.stages) assert.equal(st.words.length, 8, `${st.key} 단어 수`);
   }
 });
-test('단어 id·뜻이 중복되지 않는다(오답 보기가 정답과 겹치지 않도록, 언어 섞여도 동일)', () => {
+test('단어 id는 전체에서, 뜻은 언어 안에서 중복되지 않는다(오답 보기는 같은 언어에서만 뽑음)', () => {
   assert.equal(new Set(ALL_WORDS.map((w) => w.id)).size, ALL_WORDS.length);
-  assert.equal(new Set(ALL_WORDS.map((w) => w.ko)).size, ALL_WORDS.length);
+  for (const lang of ['en', 'ja']) {
+    const ws = ALL_WORDS.filter((w) => w.lang === lang);
+    const dup = ws.map((w) => w.ko).filter((ko, i, a) => a.indexOf(ko) !== i);
+    assert.deepEqual(dup, [], `${lang} 뜻 중복`);
+  }
 });
 test('예문의 *표시*가 표제어와 정확히 같다', () => {
   for (const w of ALL_WORDS) {
@@ -89,11 +95,92 @@ test('보스는 16문제, 해당 레벨 단어만 나온다', () => {
 test('복습은 단계에 따라 유형이 달라지고, 재도전은 다른 유형이다', () => {
   const recs = { borrow: { box: 0 }, carry: { box: 5 } };
   const qs = reviewQuestions(['borrow', 'carry'], recs, seeded(5));
-  assert.equal(qs.find((q) => q.wordId === 'carry').type, 'spell');
+  assert.ok(['spell', 'write'].includes(qs.find((q) => q.wordId === 'carry').type));
   assert.ok(['meaning', 'listen', 'cloze'].includes(qs.find((q) => q.wordId === 'borrow').type));
   const q = makeQuestion('meaning', WORD_BY_ID.get('borrow'));
   const r = retryQuestion(q);
   assert.ok(r.retry && r.type !== 'meaning' && r.wordId === 'borrow');
+});
+
+
+console.log('일본어 강화(빈칸 쓰기·한자 읽기·활용형)');
+test('로마자 → 히라가나 변환(헵번·훈령식, 촉음, ん)', () => {
+  const cases = { taberu: 'たべる', onna: 'おんな', honn: 'ほん', gakkou: 'がっこう', isshoni: 'いっしょに', shashin: 'しゃしん',
+    sya: 'しゃ', tukue: 'つくえ', tsukue: 'つくえ', ongaku: 'おんがく', "kin'en": 'きんえん', matcha: 'まっちゃ', benkyousuru: 'べんきょうする' };
+  for (const [r, k] of Object.entries(cases)) assert.equal(toHiragana(r), k, r);
+  assert.equal(normalizeKana('タベル'), 'たべる');
+});
+test('일본어 단어의 로마자는 변환하면 읽기와 같다(스펠링 채점이 맞게 되려면)', () => {
+  for (const w of ALL_WORDS.filter((x) => x.lang === 'ja')) assert.equal(toHiragana(w.romaji), w.reading, w.id);
+});
+test('빈칸 쓰기: 일본어는 한자·히라가나·가타카나·로마자 모두 정답, 영어는 철자', () => {
+  const q = makeQuestion('write', WORD_BY_ID.get('食べる'));
+  for (const ok of ['食べる', 'たべる', 'タベル', ' Taberu ']) assert.ok(checkAnswer(q, ok), ok);
+  for (const bad of ['たべた', 'nomu', '']) assert.ok(!checkAnswer(q, bad), bad);
+  const e = makeQuestion('write', WORD_BY_ID.get('borrow'));
+  assert.ok(checkAnswer(e, ' Borrow ') && !checkAnswer(e, 'borow'));
+  assert.equal(writeHint(WORD_BY_ID.get('食べる')), 'た＿＿');
+});
+test('스펠링: 로마자 표기 차이(si/shi, tu/tsu)도 정답', () => {
+  assert.ok(checkAnswer(makeQuestion('spell', WORD_BY_ID.get('写真')), 'syasin'));
+  assert.ok(checkAnswer(makeQuestion('spell', WORD_BY_ID.get('机')), 'tukue'));
+});
+test('한자 읽기: 한자가 있는 단어만, 보기 4개(같은 언어 읽기)·정답 포함', () => {
+  for (const w of ALL_WORDS.filter(hasKanji)) {
+    const q = makeQuestion('kanji', w, seeded(w.reading.length));
+    assert.equal(q.type, 'kanji');
+    assert.equal(new Set(q.choices).size, 4, w.id);
+    assert.ok(q.choices.includes(w.reading));
+  }
+  assert.equal(makeQuestion('kanji', WORD_BY_ID.get('とても')).type, 'meaning', '가나뿐인 단어는 뜻 고르기로 대체');
+  assert.equal(makeQuestion('kanji', WORD_BY_ID.get('borrow')).type, 'meaning');
+});
+test('활용형: 동사 종류와 대표 활용이 맞다', () => {
+  const v = (id) => WORD_BY_ID.get(id);
+  const table = {
+    書く: ['godan', '書きます', '書いて', '書かない', '書いた'], 行く: ['godan', '行きます', '行って', '行かない', '行った'],
+    買う: ['godan', '買います', '買って', '買わない', '買った'], 帰る: ['godan', '帰ります', '帰って', '帰らない', '帰った'],
+    入る: ['godan', '入ります', '入って', '入らない', '入った'], 泳ぐ: ['godan', '泳ぎます', '泳いで', '泳がない', '泳いだ'],
+    飲む: ['godan', '飲みます', '飲んで', '飲まない', '飲んだ'], 話す: ['godan', '話します', '話して', '話さない', '話した'],
+    ある: ['godan', 'あります', 'あって', 'ない', 'あった'], 食べる: ['ichidan', '食べます', '食べて', '食べない', '食べた'],
+    着る: ['ichidan', '着ます', '着て', '着ない', '着た'], 来る: ['kuru', '来ます', '来て', '来ない', '来た'],
+    勉強する: ['suru', '勉強します', '勉強して', '勉強しない', '勉強した'],
+  };
+  for (const [id, [cls, ...forms]] of Object.entries(table)) {
+    assert.equal(verbClass(v(id)), cls, id);
+    assert.deepEqual(FORM_KEYS.map((f) => conjugate(v(id), f).form), forms, id);
+  }
+  assert.equal(conjugate(v('来る'), 'nai').reading, 'こない');
+});
+test('활용형: 모든 일본어 동사·모든 형태에서 보기 4개·중복 없음·정답 포함', () => {
+  const verbs = ALL_WORDS.filter((w) => w.lang === 'ja' && w.pos === 'v');
+  assert.ok(verbs.length >= 40);
+  for (const w of verbs) {
+    assert.ok(verbClass(w), `${w.id}: 동사 종류 판정 실패`);
+    for (let k = 0; k < 8; k += 1) {
+      const q = makeQuestion('conj', w, seeded(k + 1));
+      assert.equal(new Set(q.choices).size, 4, `${w.id}/${q.form}`);
+      assert.ok(q.choices.includes(q.answer) && checkAnswer(q, q.answer));
+    }
+  }
+  assert.equal(makeQuestion('conj', WORD_BY_ID.get('学校')).type, 'reverse', '동사가 아니면 대체');
+});
+test('일본어 스테이지·보스·복습은 단어에 맞는 유형만 낸다', () => {
+  const ja = langLevels('ja');
+  for (const lv of ja) {
+    for (const st of lv.stages) {
+      const qs = stageQuestions(st, seeded(st.index + 3));
+      assert.equal(qs.length, 16);
+      for (const q of qs) assert.ok(typesFor(WORD_BY_ID.get(q.wordId)).includes(q.type), `${st.key}: ${q.wordId}/${q.type}`);
+    }
+    for (const q of bossQuestions(lv.id, 16, seeded(lv.id))) assert.ok(typesFor(WORD_BY_ID.get(q.wordId)).includes(q.type));
+  }
+  for (const q of bossQuestions(1, 16, seeded(2))) assert.ok(!['kanji', 'conj'].includes(q.type), '영어 보스에는 일본어 유형 없음');
+  const types = new Set(ja.flatMap((lv) => lv.stages.flatMap((st) => stageQuestions(st, seeded(st.index + 9)).map((q) => q.type))));
+  for (const t of ['write', 'kanji', 'conj']) assert.ok(types.has(t), `${t} 유형이 실제로 출제됨`);
+});
+test('일본어 N5는 100단어 이상', () => {
+  assert.ok(langLevels('ja')[0].stages.flatMap((st) => st.words).length >= 100);
 });
 
 console.log('간격 반복');
