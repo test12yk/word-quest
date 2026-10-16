@@ -47,7 +47,9 @@ test('레벨 트랙 이동: 각 언어의 첫 레벨은 이전이 없고, 마지
   assert.equal(levelTrackPrev(5), null); // 일본어 첫 레벨(N5)
   assert.equal(levelTrackNext(5).id, 6); // N5 다음은 N4
   assert.equal(levelTrackPrev(6).id, 5); // N4 이전은 N5
-  assert.equal(levelTrackNext(6), null); // N4가 지금까지는 일본어 마지막 레벨
+  assert.equal(levelTrackNext(6).id, 7); // N4 다음은 N3
+  assert.equal(levelTrackPrev(7).id, 6); // N3 이전은 N4
+  assert.equal(levelTrackNext(7), null); // N3이 지금까지는 일본어 마지막 레벨
 });
 
 console.log('문제 생성');
